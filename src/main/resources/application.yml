@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: fire-event-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/fortivus}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: true
+    show-sql: false
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD:guest}
+
+server:
+  port: 8084
+
+app:
+  nasa-firms:
+    map-key: "YOUR_NASA_FIRMS_MAP_KEY" # To be configured via environment variable
+    url: "https://firms.modaps.eosdis.nasa.gov/api/country/csv"
+  sync:
+    cron: "0 0 * * * *" # Every hour
