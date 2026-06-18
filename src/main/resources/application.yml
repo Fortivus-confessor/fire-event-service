@@ -12,6 +12,8 @@ spring:
     properties:
       hibernate:
         format_sql: true
+        default_schema: fire_events
+        hbm2ddl.create_namespaces: true
     show-sql: false
   rabbitmq:
     host: ${SPRING_RABBITMQ_HOST:localhost}
