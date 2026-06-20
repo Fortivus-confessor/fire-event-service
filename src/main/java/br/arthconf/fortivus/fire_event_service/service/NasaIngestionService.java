@@ -19,11 +19,22 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.Map;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.core.io.ClassPathResource;
+import java.io.InputStream;
+import org.locationtech.jts.geom.Geometry;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class NasaIngestionService {
+public class NasaIngestionService implements org.springframework.boot.CommandLineRunner {
 
     private final FocoCalorRepository focoCalorRepository;
     private final ClusterizacaoService clusterizacaoService;
@@ -43,18 +54,64 @@ public class NasaIngestionService {
     private static final double LON_MIN = -74.0;
     private static final double LON_MAX = -34.8;
 
+    private Geometry brazilGeometry;
+
+    private void carregarGeometriaBrasil() {
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            InputStream is = new ClassPathResource("brazil.json").getInputStream();
+            JsonNode root = mapper.readTree(is);
+            JsonNode coordinates = root.path("features").get(0).path("geometry").path("coordinates").get(0);
+            
+            Coordinate[] coords = new Coordinate[coordinates.size()];
+            for (int i = 0; i < coordinates.size(); i++) {
+                JsonNode point = coordinates.get(i);
+                double lon = point.get(0).asDouble();
+                double lat = point.get(1).asDouble();
+                coords[i] = new Coordinate(lon, lat);
+            }
+            brazilGeometry = geometryFactory.createPolygon(coords);
+            log.info("Geometria do Brasil carregada com sucesso ({} pontos).", coords.length);
+        } catch (Exception e) {
+            log.error("Erro ao carregar geometria do Brasil", e);
+        }
+    }
+
+    @Override
+    public void run(String... args) throws Exception {
+        carregarGeometriaBrasil();
+        long quantidade = focoCalorRepository.count();
+        if (quantidade == 0) {
+            log.info("Banco de dados vazio (0 focos). Executando carga inicial de dados (7 dias)...");
+            sincronizarDadosNasa("7d");
+        } else {
+            log.info("Banco de dados já contém {} focos. Carga inicial ignorada. Sincronização ocorrerá via agendamento.", quantidade);
+        }
+    }
+
     @Scheduled(cron = "${app.sync.cron}")
-    public void sincronizarDadosNasa() {
-        log.info("Iniciando sincronização de dados da NASA FIRMS...");
+    public void sincronizarDadosAgendado() {
+        log.info("Executando sincronização agendada (24h)...");
+        sincronizarDadosNasa("24h");
+    }
+
+    public void sincronizarDadosNasa(String periodo) {
+        log.info("Iniciando busca de dados da NASA FIRMS (período: {})...", periodo);
         try {
             RestTemplate restTemplate = new RestTemplate();
-            // A URL real do FIRMS usa a Map Key e formata o pais/area. Aqui simularemos a chamada direta a URL baseada em pais (BRA) ou bbox
-            String fullUrl = nasaUrl.replace("YOUR_NASA_FIRMS_MAP_KEY", mapKey); // Ajuste conforme a URL final real do FIRMS
             
-            // Para simplificar a POC, em caso de erro da URL, logamos e retornamos.
-            if(fullUrl.contains("YOUR_NASA_FIRMS_MAP_KEY")) {
-                log.warn("Nasa Map Key nao configurada. Ignorando sincronizacao real.");
-                return;
+            String fullUrl;
+            if (nasaUrl.contains("YOUR_NASA_FIRMS_MAP_KEY") || "YOUR_NASA_FIRMS_MAP_KEY".equals(mapKey)) {
+                log.info("Nasa Map Key não configurada. Utilizando base pública da América do Sul.");
+                if ("7d".equals(periodo)) {
+                    fullUrl = "https://firms.modaps.eosdis.nasa.gov/data/active_fire/noaa-20-viirs-c2/csv/J1_VIIRS_C2_South_America_7d.csv";
+                } else {
+                    fullUrl = "https://firms.modaps.eosdis.nasa.gov/data/active_fire/noaa-20-viirs-c2/csv/J1_VIIRS_C2_South_America_24h.csv";
+                }
+            } else {
+                // A URL real do FIRMS usa a Map Key.
+                fullUrl = nasaUrl.replace("YOUR_NASA_FIRMS_MAP_KEY", mapKey);
+                // Aqui seria necessário adaptar a URL com a mapKey para lidar com 7d/24h se for a API dinâmica
             }
 
             String csvContent = restTemplate.getForObject(fullUrl, String.class);
@@ -69,49 +126,67 @@ public class NasaIngestionService {
     public void processarCsv(String csvContent) {
         try (CSVReader csvReader = new CSVReader(new StringReader(csvContent))) {
             String[] headers = csvReader.readNext(); // Ignora cabeçalho
+            if (headers == null) return;
+
+            Map<String, Integer> colMap = new HashMap<>();
+            for (int i = 0; i < headers.length; i++) {
+                colMap.put(headers[i].trim().toLowerCase(), i);
+            }
+
             String[] record;
-
             while ((record = csvReader.readNext()) != null) {
-                // Mapeamento FIRMS VIIRS/MODIS: lat(0), lon(1), brightness(2), ..., acq_date(5), acq_time(6), satellite(7), instrument(8), confidence(9), frp(12)
-                double lat = Double.parseDouble(record[0]);
-                double lon = Double.parseDouble(record[1]);
-                String confidence = record[9];
-                double frp = Double.parseDouble(record[12]);
+                try {
+                    double lat = Double.parseDouble(record[colMap.get("latitude")]);
+                    double lon = Double.parseDouble(record[colMap.get("longitude")]);
+                    String confidence = colMap.containsKey("confidence") ? record[colMap.get("confidence")] : "nominal";
+                    double frp = colMap.containsKey("frp") ? Double.parseDouble(record[colMap.get("frp")]) : 0.0;
 
-                // 1. Filtro de Ingestão: Qualidade
-                if ("low".equalsIgnoreCase(confidence) || "l".equalsIgnoreCase(confidence) || isConfidenceTooLow(confidence)) {
-                    continue; // Ignora falsos positivos
+                    // 1. Filtro de Ingestão: Qualidade
+                    if ("low".equalsIgnoreCase(confidence) || "l".equalsIgnoreCase(confidence) || isConfidenceTooLow(confidence)) {
+                        continue; // Ignora falsos positivos
+                    }
+
+                    // 2. Filtro de Ingestão: Espacial (Apenas Brasil)
+                    if (lat < LAT_MIN || lat > LAT_MAX || lon < LON_MIN || lon > LON_MAX) {
+                        continue; // Fora do Brasil (Bounding Box Rápido)
+                    }
+
+                    if (brazilGeometry != null) {
+                        Point pt = geometryFactory.createPoint(new Coordinate(lon, lat));
+                        if (!brazilGeometry.contains(pt)) {
+                            continue; // Excluir países de fora do Brasil
+                        }
+                    }
+
+                    String acqDate = record[colMap.get("acq_date")];
+                    String acqTime = record[colMap.get("acq_time")]; // Ex: "1430" (14:30)
+                    String satellite = colMap.containsKey("satellite") ? record[colMap.get("satellite")] : "N/A";
+                    String instrument = colMap.containsKey("instrument") ? record[colMap.get("instrument")] : "VIIRS";
+
+                    String externalId = gerarExternalId(satellite, acqDate, acqTime, lat, lon);
+
+                    // Evita duplicidade se já ingeriu
+                    if (focoCalorRepository.existsByExternalId(externalId)) {
+                        continue;
+                    }
+
+                    FocoCalor foco = parseToFocoCalor(lat, lon, acqDate, acqTime, satellite, instrument, confidence, frp, externalId);
+                    
+                    // 3. Clusterização
+                    var eventoAlvo = clusterizacaoService.processarFoco(foco);
+
+                    // 4. Score de Gravidade
+                    if (eventoAlvo != null) {
+                        gravidadeScoreService.avaliarGravidade(eventoAlvo);
+                    }
+                } catch (Exception ex) {
+                    log.warn("Falha ao parsear linha do CSV: {}", ex.getMessage());
                 }
-
-                // 2. Filtro de Ingestão: Espacial (Apenas Brasil)
-                if (lat < LAT_MIN || lat > LAT_MAX || lon < LON_MIN || lon > LON_MAX) {
-                    continue; // Fora do Brasil
-                }
-
-                String acqDate = record[5];
-                String acqTime = record[6]; // Ex: "1430" (14:30)
-                String satellite = record[7];
-                String instrument = record[8];
-
-                String externalId = gerarExternalId(satellite, acqDate, acqTime, lat, lon);
-
-                // Evita duplicidade se já ingeriu
-                if (focoCalorRepository.existsByExternalId(externalId)) {
-                    continue;
-                }
-
-                FocoCalor foco = parseToFocoCalor(lat, lon, acqDate, acqTime, satellite, instrument, confidence, frp, externalId);
-                
-                // 3. Clusterização
-                var eventoAlvo = clusterizacaoService.processarFoco(foco);
-
-                // 4. Score de Gravidade
-                gravidadeScoreService.avaliarGravidade(eventoAlvo);
             }
 
             log.info("Processamento do CSV da NASA concluído com sucesso.");
         } catch (Exception e) {
-            log.error("Falha ao parsear CSV", e);
+            log.error("Falha ao ler CSV", e);
         }
     }
 

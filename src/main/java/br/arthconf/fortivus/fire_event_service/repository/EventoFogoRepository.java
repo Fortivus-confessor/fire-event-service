@@ -12,6 +12,6 @@ import java.util.UUID;
 public interface EventoFogoRepository extends JpaRepository<EventoFogo, UUID> {
     
     // Busca eventos ativos que estão dentro de uma certa distância de um ponto (usando PostGIS)
-    @Query(value = "SELECT * FROM tb_eventos_fogo e WHERE e.status_evento != 'EXTINTO' AND ST_DWithin(e.centroide_geom, ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326), :radiusInDegrees)", nativeQuery = true)
+    @Query(value = "SELECT * FROM fire_events.tb_eventos_fogo e WHERE e.status_evento != 'EXTINTO' AND ST_DWithin(e.centroide_geom, ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326), :radiusInDegrees)", nativeQuery = true)
     List<EventoFogo> findActiveEventsNear(double longitude, double latitude, double radiusInDegrees);
 }
