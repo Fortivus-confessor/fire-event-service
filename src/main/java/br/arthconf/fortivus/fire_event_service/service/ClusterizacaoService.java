@@ -35,6 +35,7 @@ public class ClusterizacaoService {
             eventoAlvo.setCentroideGeom(novoFoco.getGeom());
             eventoAlvo.setDataPrimeiraDeteccao(novoFoco.getDataDeteccao());
             eventoAlvo.setDataUltimaDeteccao(novoFoco.getDataDeteccao());
+            eventoAlvo.setCodigo(gerarProximoCodigo());
         } else {
             // Associa ao primeiro evento próximo encontrado
             eventoAlvo = eventosProximos.get(0);
@@ -42,5 +43,14 @@ public class ClusterizacaoService {
 
         eventoAlvo.adicionarFoco(novoFoco);
         return eventoFogoRepository.save(eventoAlvo);
+    }
+
+    private Long gerarProximoCodigo() {
+        long anoAtual = java.time.LocalDateTime.now().getYear();
+        long minId = anoAtual * 100000000L;
+        long maxId = minId + 99999999L;
+        
+        Long maxExistente = eventoFogoRepository.findMaxCodigoByAno(minId, maxId);
+        return (maxExistente == null || maxExistente < minId) ? minId + 1 : maxExistente + 1;
     }
 }

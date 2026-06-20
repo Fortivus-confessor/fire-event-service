@@ -22,6 +22,9 @@ public class EventoFogo {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Column(name = "codigo", unique = true)
+    private Long codigo;
+
     @Column(name = "centroide_geom", columnDefinition = "geometry(Point,4326)")
     private Point centroideGeom;
 

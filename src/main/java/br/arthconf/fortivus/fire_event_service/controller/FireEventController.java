@@ -19,16 +19,18 @@ public class FireEventController {
 
     @GetMapping("/buscar")
     public ResponseEntity<List<EventoFogoDTO>> buscar(@org.springframework.web.bind.annotation.RequestParam("q") String q) {
+        String cleanQuery = q.replaceAll("-", "");
         List<br.arthconf.fortivus.fire_event_service.domain.EventoFogo> eventos = entityManager.createQuery(
-                "SELECT e FROM EventoFogo e WHERE CAST(e.id AS string) LIKE :query ORDER BY e.createdAt DESC", 
+                "SELECT e FROM EventoFogo e WHERE CAST(e.codigo AS string) LIKE :query ORDER BY e.createdAt DESC", 
                 br.arthconf.fortivus.fire_event_service.domain.EventoFogo.class)
-                .setParameter("query", "%" + q + "%")
+                .setParameter("query", "%" + cleanQuery + "%")
                 .setMaxResults(10)
                 .getResultList();
 
         List<EventoFogoDTO> dtos = eventos.stream().map(e -> {
             EventoFogoDTO dto = new EventoFogoDTO();
             dto.setId(e.getId().toString());
+            dto.setCodigo(e.getCodigo() != null ? e.getCodigo().toString() : null);
             dto.setStatus(e.getStatusEvento().name());
             dto.setFrpTotal(e.getFrpTotal());
             dto.setTotalFocos(e.getTotalFocos());
@@ -89,6 +91,7 @@ public class FireEventController {
         List<EventoFogoDTO> dtos = eventos.stream().map(e -> {
             EventoFogoDTO dto = new EventoFogoDTO();
             dto.setId(e.getId().toString());
+            dto.setCodigo(e.getCodigo() != null ? e.getCodigo().toString() : null);
             dto.setStatus(e.getStatusEvento().name());
             dto.setFrpTotal(e.getFrpTotal());
             dto.setTotalFocos(e.getTotalFocos());
@@ -123,6 +126,7 @@ public class FireEventController {
     @lombok.Data
     public static class EventoFogoDTO {
         private String id;
+        private String codigo;
         private Double latitude;
         private Double longitude;
         private String status;
