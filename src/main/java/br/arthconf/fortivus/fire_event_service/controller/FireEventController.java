@@ -17,6 +17,33 @@ public class FireEventController {
 
     private final EntityManager entityManager;
 
+    @GetMapping("/buscar")
+    public ResponseEntity<List<EventoFogoDTO>> buscar(@org.springframework.web.bind.annotation.RequestParam("q") String q) {
+        List<br.arthconf.fortivus.fire_event_service.domain.EventoFogo> eventos = entityManager.createQuery(
+                "SELECT e FROM EventoFogo e WHERE CAST(e.id AS string) LIKE :query ORDER BY e.createdAt DESC", 
+                br.arthconf.fortivus.fire_event_service.domain.EventoFogo.class)
+                .setParameter("query", "%" + q + "%")
+                .setMaxResults(10)
+                .getResultList();
+
+        List<EventoFogoDTO> dtos = eventos.stream().map(e -> {
+            EventoFogoDTO dto = new EventoFogoDTO();
+            dto.setId(e.getId().toString());
+            dto.setStatus(e.getStatusEvento().name());
+            dto.setFrpTotal(e.getFrpTotal());
+            dto.setTotalFocos(e.getTotalFocos());
+            dto.setPrimeiraDeteccao(e.getDataPrimeiraDeteccao() != null ? e.getDataPrimeiraDeteccao().toString() : null);
+            dto.setUltimaDeteccao(e.getDataUltimaDeteccao() != null ? e.getDataUltimaDeteccao().toString() : null);
+            if (e.getCentroideGeom() != null) {
+                dto.setLatitude(e.getCentroideGeom().getY());
+                dto.setLongitude(e.getCentroideGeom().getX());
+            }
+            return dto;
+        }).toList();
+
+        return ResponseEntity.ok(dtos);
+    }
+
     @GetMapping("/latest")
     public ResponseEntity<List<FocoCalorDTO>> getLatest() {
         List<br.arthconf.fortivus.fire_event_service.domain.FocoCalor> focos = entityManager.createQuery(
