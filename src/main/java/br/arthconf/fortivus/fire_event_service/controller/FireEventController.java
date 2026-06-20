@@ -43,6 +43,69 @@ public class FireEventController {
         return ResponseEntity.ok(dtos);
     }
 
+    @GetMapping("/active")
+    public ResponseEntity<List<EventoFogoDTO>> getActiveEvents() {
+        // Approximate bounding box for Brazil
+        double minLat = -33.7511694;
+        double maxLat = 5.2718411;
+        double minLng = -73.9828305;
+        double maxLng = -34.7931472;
+
+        List<br.arthconf.fortivus.fire_event_service.domain.EventoFogo> eventos = entityManager.createQuery(
+                "SELECT e FROM EventoFogo e WHERE e.statusEvento != 'EXTINTO' AND ST_Y(e.centroideGeom) BETWEEN :minLat AND :maxLat AND ST_X(e.centroideGeom) BETWEEN :minLng AND :maxLng", br.arthconf.fortivus.fire_event_service.domain.EventoFogo.class)
+                .setParameter("minLat", minLat)
+                .setParameter("maxLat", maxLat)
+                .setParameter("minLng", minLng)
+                .setParameter("maxLng", maxLng)
+                .getResultList();
+
+        List<EventoFogoDTO> dtos = eventos.stream().map(e -> {
+            EventoFogoDTO dto = new EventoFogoDTO();
+            dto.setId(e.getId().toString());
+            dto.setStatus(e.getStatusEvento().name());
+            dto.setFrpTotal(e.getFrpTotal());
+            dto.setTotalFocos(e.getTotalFocos());
+            dto.setPrimeiraDeteccao(e.getDataPrimeiraDeteccao() != null ? e.getDataPrimeiraDeteccao().toString() : null);
+            dto.setUltimaDeteccao(e.getDataUltimaDeteccao() != null ? e.getDataUltimaDeteccao().toString() : null);
+            if (e.getCentroideGeom() != null) {
+                dto.setLatitude(e.getCentroideGeom().getY());
+                dto.setLongitude(e.getCentroideGeom().getX());
+            }
+            // Mapear focos de calor do evento
+            dto.setFocos(e.getFocos().stream().map(f -> {
+                FocoCalorDTO fDto = new FocoCalorDTO();
+                fDto.setId(f.getId().toString());
+                fDto.setExternalId(f.getExternalId());
+                fDto.setSatellite(f.getSatelite());
+                fDto.setInstrument(f.getInstrumento());
+                fDto.setConfidence(f.getConfidence());
+                fDto.setFrp(f.getFrp());
+                fDto.setAcquisitionDate(f.getDataDeteccao() != null ? f.getDataDeteccao().toString() : null);
+                if (f.getGeom() != null) {
+                    fDto.setLatitude(f.getGeom().getY());
+                    fDto.setLongitude(f.getGeom().getX());
+                }
+                return fDto;
+            }).toList());
+            return dto;
+        }).toList();
+
+        return ResponseEntity.ok(dtos);
+    }
+
+    @lombok.Data
+    public static class EventoFogoDTO {
+        private String id;
+        private Double latitude;
+        private Double longitude;
+        private String status;
+        private Double frpTotal;
+        private Integer totalFocos;
+        private String primeiraDeteccao;
+        private String ultimaDeteccao;
+        private List<FocoCalorDTO> focos;
+    }
+
     @lombok.Data
     public static class FocoCalorDTO {
         private String id;

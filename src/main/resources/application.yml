@@ -11,6 +11,7 @@ spring:
       ddl-auto: update
     properties:
       hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
         default_schema: fire_events
         hbm2ddl.create_namespaces: true
@@ -26,7 +27,7 @@ server:
 
 app:
   nasa-firms:
-    map-key: "YOUR_NASA_FIRMS_MAP_KEY" # To be configured via environment variable
-    url: "https://firms.modaps.eosdis.nasa.gov/api/country/csv"
+    map-key: "74cf85f174470abf9ecae31706a6922d"
+    url: "https://firms.modaps.eosdis.nasa.gov/api/country/csv/YOUR_NASA_FIRMS_MAP_KEY/VIIRS_SNPP_NRT/BRA/1"
   sync:
     cron: "0 0 * * * *" # Every hour
