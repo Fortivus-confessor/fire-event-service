@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -39,6 +40,7 @@ public class NasaIngestionService implements org.springframework.boot.CommandLin
     private final FocoCalorRepository focoCalorRepository;
     private final ClusterizacaoService clusterizacaoService;
     private final GravidadeScoreService gravidadeScoreService;
+    private final RabbitTemplate rabbitTemplate;
 
     @Value("${app.nasa-firms.url}")
     private String nasaUrl;
@@ -175,9 +177,14 @@ public class NasaIngestionService implements org.springframework.boot.CommandLin
                     // 3. Clusterização
                     var eventoAlvo = clusterizacaoService.processarFoco(foco);
 
-                    // 4. Score de Gravidade
+                    // 4. Score de Gravidade e Mensageria
                     if (eventoAlvo != null) {
                         gravidadeScoreService.avaliarGravidade(eventoAlvo);
+                        try {
+                            rabbitTemplate.convertAndSend("fortivus.exchange", "fire_event.updated", eventoAlvo.getId().toString());
+                        } catch (Exception e) {
+                            log.warn("Falha ao publicar evento no RabbitMQ: {}", e.getMessage());
+                        }
                     }
                 } catch (Exception ex) {
                     log.warn("Falha ao parsear linha do CSV: {}", ex.getMessage());
