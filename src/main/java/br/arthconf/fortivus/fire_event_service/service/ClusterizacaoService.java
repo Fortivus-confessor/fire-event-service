@@ -35,7 +35,7 @@ public class ClusterizacaoService {
             eventoAlvo.setCentroideGeom(novoFoco.getGeom());
             eventoAlvo.setDataPrimeiraDeteccao(novoFoco.getDataDeteccao());
             eventoAlvo.setDataUltimaDeteccao(novoFoco.getDataDeteccao());
-            eventoAlvo.setCodigo(gerarProximoCodigo());
+            eventoAlvo.setId(gerarProximoCodigo());
         } else {
             // Associa ao primeiro evento próximo encontrado
             eventoAlvo = eventosProximos.get(0);

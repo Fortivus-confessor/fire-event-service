@@ -9,6 +9,12 @@ import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.persistence.EntityManager;
 import java.util.List;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
+import br.arthconf.fortivus.fire_event_service.repository.EventoFogoRepository;
+
 
 @RestController
 @RequestMapping("/api/v1/fire-events")
@@ -16,12 +22,38 @@ import java.util.List;
 public class FireEventController {
 
     private final EntityManager entityManager;
+    private final EventoFogoRepository eventoFogoRepository;
 
+    @GetMapping
+    public ResponseEntity<Page<EventoFogoDTO>> listar(
+            @PageableDefault(sort = "dataUltimaDeteccao", direction = Sort.Direction.DESC, size = 10) Pageable pageable) {
+        
+        Page<br.arthconf.fortivus.fire_event_service.domain.EventoFogo> page = eventoFogoRepository.findAll(pageable);
+        
+        Page<EventoFogoDTO> dtoPage = page.map(e -> {
+            EventoFogoDTO dto = new EventoFogoDTO();
+            dto.setId(e.getId().toString());
+            dto.setCodigo(e.getId() != null ? e.getId().toString() : null);
+            dto.setCodigoVisual(e.getId() != null ? "EF" + e.getId().toString() : null);
+            dto.setStatus(e.getStatusEvento().name());
+            dto.setFrpTotal(e.getFrpTotal());
+            dto.setTotalFocos(e.getTotalFocos());
+            dto.setPrimeiraDeteccao(e.getDataPrimeiraDeteccao() != null ? e.getDataPrimeiraDeteccao().toString() : null);
+            dto.setUltimaDeteccao(e.getDataUltimaDeteccao() != null ? e.getDataUltimaDeteccao().toString() : null);
+            if (e.getCentroideGeom() != null) {
+                dto.setLatitude(e.getCentroideGeom().getY());
+                dto.setLongitude(e.getCentroideGeom().getX());
+            }
+            return dto;
+        });
+        
+        return ResponseEntity.ok(dtoPage);
+    }
     @GetMapping("/buscar")
     public ResponseEntity<List<EventoFogoDTO>> buscar(@org.springframework.web.bind.annotation.RequestParam("q") String q) {
         String cleanQuery = q.replaceAll("-", "");
         List<br.arthconf.fortivus.fire_event_service.domain.EventoFogo> eventos = entityManager.createQuery(
-                "SELECT e FROM EventoFogo e WHERE CAST(e.codigo AS string) LIKE :query ORDER BY e.createdAt DESC", 
+                "SELECT e FROM EventoFogo e WHERE CAST(e.id AS string) LIKE :query ORDER BY e.createdAt DESC", 
                 br.arthconf.fortivus.fire_event_service.domain.EventoFogo.class)
                 .setParameter("query", "%" + cleanQuery + "%")
                 .setMaxResults(10)
@@ -30,7 +62,8 @@ public class FireEventController {
         List<EventoFogoDTO> dtos = eventos.stream().map(e -> {
             EventoFogoDTO dto = new EventoFogoDTO();
             dto.setId(e.getId().toString());
-            dto.setCodigo(e.getCodigo() != null ? e.getCodigo().toString() : null);
+            dto.setCodigo(e.getId() != null ? e.getId().toString() : null);
+            dto.setCodigoVisual(e.getId() != null ? "EF" + e.getId().toString() : null);
             dto.setStatus(e.getStatusEvento().name());
             dto.setFrpTotal(e.getFrpTotal());
             dto.setTotalFocos(e.getTotalFocos());
@@ -91,7 +124,8 @@ public class FireEventController {
         List<EventoFogoDTO> dtos = eventos.stream().map(e -> {
             EventoFogoDTO dto = new EventoFogoDTO();
             dto.setId(e.getId().toString());
-            dto.setCodigo(e.getCodigo() != null ? e.getCodigo().toString() : null);
+            dto.setCodigo(e.getId() != null ? e.getId().toString() : null);
+            dto.setCodigoVisual(e.getId() != null ? "EF" + e.getId().toString() : null);
             dto.setStatus(e.getStatusEvento().name());
             dto.setFrpTotal(e.getFrpTotal());
             dto.setTotalFocos(e.getTotalFocos());
@@ -127,6 +161,7 @@ public class FireEventController {
     public static class EventoFogoDTO {
         private String id;
         private String codigo;
+        private String codigoVisual;
         private Double latitude;
         private Double longitude;
         private String status;

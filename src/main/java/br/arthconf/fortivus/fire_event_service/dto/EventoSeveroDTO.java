@@ -9,7 +9,7 @@ import java.util.UUID;
 @Data
 @Builder
 public class EventoSeveroDTO {
-    private UUID eventoId;
+    private Long eventoId;
     private Double latitudeCentroide;
     private Double longitudeCentroide;
     private Double frpTotal;
