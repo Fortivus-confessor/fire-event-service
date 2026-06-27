@@ -27,7 +27,7 @@ server:
 
 app:
   nasa-firms:
-    map-key: "74cf85f174470abf9ecae31706a6922d"
+    map-key: ${NASA_FIRMS_MAP_KEY:YOUR_NASA_FIRMS_MAP_KEY}
     url: "https://firms.modaps.eosdis.nasa.gov/api/country/csv/YOUR_NASA_FIRMS_MAP_KEY/VIIRS_SNPP_NRT/BRA/1"
   sync:
     cron: "0 0 * * * *" # Every hour
