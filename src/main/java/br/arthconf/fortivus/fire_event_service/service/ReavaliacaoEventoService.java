@@ -31,11 +31,7 @@ public class ReavaliacaoEventoService {
 
         LocalDateTime limiteTempo = LocalDateTime.now().minusHours(HORAS_INATIVIDADE_EXTINCAO);
 
-        // Busca eventos que ainda estão ativos mas não recebem atualização
-        var eventosDesatualizados = eventoFogoRepository.findAll().stream()
-                .filter(e -> e.getStatusEvento() != StatusEventoEnum.EXTINTO)
-                .filter(e -> e.getDataUltimaDeteccao().isBefore(limiteTempo))
-                .toList();
+        var eventosDesatualizados = eventoFogoRepository.findInativos(StatusEventoEnum.EXTINTO, limiteTempo);
 
         if (!eventosDesatualizados.isEmpty()) {
             eventosDesatualizados.forEach(e -> {
