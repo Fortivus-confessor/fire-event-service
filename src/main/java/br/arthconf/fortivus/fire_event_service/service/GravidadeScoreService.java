@@ -1,6 +1,7 @@
 package br.arthconf.fortivus.fire_event_service.service;
 
 import br.arthconf.fortivus.fire_event_service.domain.EventoFogo;
+import br.arthconf.fortivus.fire_event_service.domain.SeveridadeEventoEnum;
 import br.arthconf.fortivus.fire_event_service.domain.StatusEventoEnum;
 import br.arthconf.fortivus.fire_event_service.dto.EventoSeveroDTO;
 import br.arthconf.fortivus.fire_event_service.repository.EventoFogoRepository;
@@ -18,25 +19,47 @@ public class GravidadeScoreService {
     private final EventoFogoRepository eventoFogoRepository;
     private final RabbitTemplate rabbitTemplate;
 
-    private static final double LIMIAR_FRP_CRITICO = 150.0;
-    private static final int LIMIAR_FOCOS_CRITICO = 3;
+    // Limiar científico para ALTA: FRP ≥ 150 MW (categoria 2 de Ichoku et al., 2008)
+    // ou ≥ 3 focos co-localizados (Schroeder et al., 2010 — indicador de frente estendida)
+    private static final double LIMIAR_FRP_ALTA = 150.0;
+    private static final int LIMIAR_FOCOS_ALTA = 3;
+
+    // Limiar científico para CRITICA: FRP > 500 MW (categoria 3 de Ichoku et al., 2008;
+    // consumo de biomassa ≈ 184 kg/s segundo Wooster et al., 2005)
+    private static final double LIMIAR_FRP_CRITICA = 500.0;
+
     private static final String EXCHANGE_NAME = "fortivus.fire_events";
     private static final String ROUTING_KEY = "fire.detected.severe";
 
     @Transactional
     public void avaliarGravidade(EventoFogo evento) {
-        if (evento.getStatusEvento() == StatusEventoEnum.MONITORAMENTO) {
-            
-            boolean isSevero = evento.getFrpTotal() >= LIMIAR_FRP_CRITICO || evento.getTotalFocos() >= LIMIAR_FOCOS_CRITICO;
-
-            if (isSevero) {
-                log.warn("Evento de fogo {} classificado como ATIVO_SEVERO. FRP Total: {}", evento.getId(), evento.getFrpTotal());
-                evento.setStatusEvento(StatusEventoEnum.ATIVO_SEVERO);
-                eventoFogoRepository.save(evento);
-                
-                dispararAlertaRabbitMQ(evento);
-            }
+        if (evento.getStatusEvento() != StatusEventoEnum.MONITORAMENTO) {
+            return;
         }
+
+        SeveridadeEventoEnum severidade = classificarSeveridade(evento);
+        if (severidade == null) {
+            return;
+        }
+
+        log.warn("Evento {} classificado como ATIVO_SEVERO / {}. FRP Total: {} MW, Focos: {}",
+                evento.getId(), severidade, evento.getFrpTotal(), evento.getTotalFocos());
+
+        evento.setStatusEvento(StatusEventoEnum.ATIVO_SEVERO);
+        evento.setSeveridade(severidade);
+        eventoFogoRepository.save(evento);
+
+        dispararAlertaRabbitMQ(evento);
+    }
+
+    private SeveridadeEventoEnum classificarSeveridade(EventoFogo evento) {
+        if (evento.getFrpTotal() > LIMIAR_FRP_CRITICA) {
+            return SeveridadeEventoEnum.CRITICA;
+        }
+        if (evento.getFrpTotal() >= LIMIAR_FRP_ALTA || evento.getTotalFocos() >= LIMIAR_FOCOS_ALTA) {
+            return SeveridadeEventoEnum.ALTA;
+        }
+        return null;
     }
 
     private void dispararAlertaRabbitMQ(EventoFogo evento) {
@@ -47,7 +70,7 @@ public class GravidadeScoreService {
                 .frpTotal(evento.getFrpTotal())
                 .totalFocos(evento.getTotalFocos())
                 .dataDeteccao(evento.getDataUltimaDeteccao())
-                .severidade(evento.getFrpTotal() > 500 ? "CRITICA" : "ALTA")
+                .severidade(evento.getSeveridade())
                 .build();
 
         rabbitTemplate.convertAndSend(EXCHANGE_NAME, ROUTING_KEY, dto);

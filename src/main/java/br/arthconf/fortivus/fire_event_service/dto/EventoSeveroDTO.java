@@ -1,10 +1,10 @@
 package br.arthconf.fortivus.fire_event_service.dto;
 
+import br.arthconf.fortivus.fire_event_service.domain.SeveridadeEventoEnum;
 import lombok.Builder;
 import lombok.Data;
 
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 @Data
 @Builder
@@ -15,5 +15,5 @@ public class EventoSeveroDTO {
     private Double frpTotal;
     private Integer totalFocos;
     private LocalDateTime dataDeteccao;
-    private String severidade; // ex: ALTA, CRITICA
+    private SeveridadeEventoEnum severidade;
 }

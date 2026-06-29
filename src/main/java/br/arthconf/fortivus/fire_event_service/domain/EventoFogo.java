@@ -8,7 +8,6 @@ import org.locationtech.jts.geom.Point;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 @Entity
 @Table(name = "tb_eventos_fogo", indexes = {
@@ -39,6 +38,10 @@ public class EventoFogo {
     @Enumerated(EnumType.STRING)
     @Column(name = "status_evento", nullable = false)
     private StatusEventoEnum statusEvento = StatusEventoEnum.MONITORAMENTO;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "severidade")
+    private SeveridadeEventoEnum severidade;
 
     @Column(name = "total_focos", nullable = false)
     private Integer totalFocos = 0;
