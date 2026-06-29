@@ -3,8 +3,8 @@ spring:
     name: fire-event-service
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/fortivus}
-    username: ${SPRING_DATASOURCE_USERNAME:postgres}
-    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
@@ -19,8 +19,11 @@ spring:
   rabbitmq:
     host: ${SPRING_RABBITMQ_HOST:localhost}
     port: ${SPRING_RABBITMQ_PORT:5672}
-    username: ${SPRING_RABBITMQ_USERNAME:guest}
-    password: ${SPRING_RABBITMQ_PASSWORD:guest}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+  cloud:
+    vault:
+      enabled: false
 
 server:
   port: 8084
@@ -31,3 +34,29 @@ app:
     url: "https://firms.modaps.eosdis.nasa.gov/api/country/csv/${NASA_FIRMS_MAP_KEY:YOUR_NASA_FIRMS_MAP_KEY}/VIIRS_SNPP_NRT/BRA/1"
   sync:
     cron: "0 0 * * * *" # Every hour
+
+---
+# Perfil DEV: Spring Cloud Vault com AppRole + secrets em runtime
+spring:
+  config:
+    activate:
+      on-profile: dev
+    import:
+      - optional:vault://fortivus/database
+      - optional:vault://fortivus/rabbitmq
+      - optional:vault://fortivus/nasa-firms
+
+  cloud:
+    vault:
+      enabled: true
+      uri: ${VAULT_ADDR:http://host.docker.internal:8200}
+      authentication: APPROLE
+      app-role:
+        role-id: ${VAULT_ROLE_ID}
+        secret-id: ${VAULT_SECRET_ID}
+        app-role-path: approle
+      kv:
+        enabled: true
+        backend: fortivus
+      reactive:
+        enabled: false
