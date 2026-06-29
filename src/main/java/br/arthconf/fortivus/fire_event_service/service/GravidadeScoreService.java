@@ -7,6 +7,7 @@ import br.arthconf.fortivus.fire_event_service.dto.EventoSeveroDTO;
 import br.arthconf.fortivus.fire_event_service.repository.EventoFogoRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -63,17 +64,22 @@ public class GravidadeScoreService {
     }
 
     private void dispararAlertaRabbitMQ(EventoFogo evento) {
-        EventoSeveroDTO dto = EventoSeveroDTO.builder()
-                .eventoId(evento.getId())
-                .latitudeCentroide(evento.getCentroideGeom().getY())
-                .longitudeCentroide(evento.getCentroideGeom().getX())
-                .frpTotal(evento.getFrpTotal())
-                .totalFocos(evento.getTotalFocos())
-                .dataDeteccao(evento.getDataUltimaDeteccao())
-                .severidade(evento.getSeveridade())
-                .build();
+        try {
+            EventoSeveroDTO dto = EventoSeveroDTO.builder()
+                    .eventoId(evento.getId())
+                    .latitudeCentroide(evento.getCentroideGeom().getY())
+                    .longitudeCentroide(evento.getCentroideGeom().getX())
+                    .frpTotal(evento.getFrpTotal())
+                    .totalFocos(evento.getTotalFocos())
+                    .dataDeteccao(evento.getDataUltimaDeteccao())
+                    .severidade(evento.getSeveridade())
+                    .build();
 
-        rabbitTemplate.convertAndSend(EXCHANGE_NAME, ROUTING_KEY, dto);
-        log.info("Alerta de evento severo enviado para o RabbitMQ (Routing Key: {})", ROUTING_KEY);
+            rabbitTemplate.convertAndSend(EXCHANGE_NAME, ROUTING_KEY, dto);
+            log.info("Alerta de evento severo enviado para o RabbitMQ (Routing Key: {})", ROUTING_KEY);
+        } catch (AmqpException e) {
+            log.error("Falha ao publicar alerta RabbitMQ para evento {} — status ATIVO_SEVERO persistido no banco, alerta perdido: {}",
+                    evento.getId(), e.getMessage());
+        }
     }
 }
