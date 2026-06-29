@@ -12,7 +12,8 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "tb_eventos_fogo", indexes = {
-        @Index(name = "idx_evento_fogo_geom", columnList = "centroide_geom")
+        @Index(name = "idx_evento_fogo_geom", columnList = "centroide_geom"),
+        @Index(name = "idx_evento_fogo_status_ultima_deteccao", columnList = "status_evento, data_ultima_deteccao")
 })
 @Data
 @EqualsAndHashCode(of = "id")

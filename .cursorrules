@@ -1,0 +1,160 @@
+# fire-event-service — Regras de Contexto (Motor GIS Espacial)
+
+## Responsabilidade Central
+Este microsserviço é o **cérebro de sensoriamento** do ecossistema Fortivus.
+Transforma pontos brutos de anomalias térmicas da NASA em eventos de fogo consolidados,
+aplicando inteligência geoespacial via PostGIS.
+
+---
+
+## Stack Tecnológica
+
+| Camada | Tecnologia |
+|---|---|
+| Runtime | Java 17 (records, text blocks) + Spring Boot 3.4.1 (`jakarta.*`) |
+| GIS | PostgreSQL + PostGIS + Hibernate Spatial + JTS (LocationTech) |
+| Mensageria | Spring AMQP → RabbitMQ (`fortivus.fire_events` exchange) |
+| Build | Maven |
+| Lombok | Obrigatório — nunca gere getters/setters manuais |
+
+---
+
+## Estrutura de Pacotes
+
+```
+br.arthconf.fortivus.fire_event_service/
+  config/      ← RabbitMQConfig, WebClientConfig
+  controller/  ← FireEventController (REST: /api/v1/fire-events)
+  domain/      ← FocoCalor, EventoFogo, StatusEventoEnum (entidades JPA + PostGIS)
+  dto/         ← EventoSeveroDTO (payload RabbitMQ)
+  repository/  ← FocoCalorRepository, EventoFogoRepository (queries nativas PostGIS)
+  service/     ← NasaIngestionService, ClusterizacaoService, GravidadeScoreService, ReavaliacaoEventoService
+```
+
+Schema PostgreSQL: `fire_events`
+Tabelas: `tb_focos_calor`, `tb_eventos_fogo`
+
+---
+
+## Regras de Negócio GIS (CRÍTICO)
+
+### 1. Clusterização Espacial (`ClusterizacaoService`)
+- Raio de agrupamento: **1.5km** (≈ 0.0135 graus decimais)
+- Query de busca usa `ST_DWithin` no PostGIS (nativa, com índice GIST)
+- Foco novo → busca `EventoFogo` ativo mais próximo → se existir, associa; senão, cria novo
+- `EventoFogo.adicionarFoco()` acumula `frpTotal`, `frpMaximo`, `totalFocos`, `dataUltimaDeteccao`
+
+### 2. Filtros de Ingestão (`NasaIngestionService`)
+- **Qualidade:** Ignora `confidence = "low"`, `"l"` ou valor numérico `< 50`
+- **Bounding Box rápido:** Brasil = lat [-33.7, 5.2], lon [-74.0, -34.8]
+- **Polígono preciso:** `brazilGeometry` carregado de `resources/brazil.json` (GeoJSON)
+- **Deduplicação:** `externalId = "SATELLITE_DATE_TIME_LAT_LON"` — `existsByExternalId()` antes de inserir
+
+### 3. Severidade e Alertas (`GravidadeScoreService`)
+- Limiar crítico: `frpTotal >= 150.0` OR `totalFocos >= 3`
+- Se severo: status → `ATIVO_SEVERO`, dispara mensagem no RabbitMQ
+  - Exchange: `fortivus.fire_events`
+  - Routing Key: `fire.detected.severe`
+  - Payload: `EventoSeveroDTO` (JSON via Jackson)
+- Severidade do DTO: `frpTotal > 500` → `"CRITICA"`, senão `"ALTA"`
+
+### 4. Ciclo de Vida (`ReavaliacaoEventoService`)
+- Job cron a cada **6 horas** (`0 0 */6 * * *`)
+- Evento sem focos novos por **48h** → status `EXTINTO`
+
+### 5. Geração de ID dos EventoFogo
+- Formato numérico baseado em ano: `AAAA0000001`, `AAAA0000002`, ...
+- `minId = ano * 100_000_000L` (ex: 2024 → 202400000000)
+- Busca o MAX existente no range do ano e incrementa
+
+---
+
+## Queries PostGIS Mapeadas
+
+```sql
+-- Busca eventos ativos próximos (ClusterizacaoService)
+SELECT * FROM fire_events.tb_eventos_fogo e
+WHERE e.status_evento != 'EXTINTO'
+  AND ST_DWithin(e.centroide_geom,
+                 ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326),
+                 :radiusInDegrees)
+```
+
+**Atenção:** `ST_DWithin` com geometria `4326` opera em graus — usar `ST_DWithin` com `geography` para resultado em metros reais se precisar de maior precisão.
+
+---
+
+## Segurança (INEGOCIÁVEL)
+
+- API Key da NASA FIRMS **NUNCA** em código-fonte — usar variável de ambiente `NASA_FIRMS_MAP_KEY`
+- Configuração no `application.yml`:
+  ```yaml
+  app:
+    nasa-firms:
+      map-key: ${NASA_FIRMS_MAP_KEY}
+  ```
+- `.env` ou secrets do Docker Compose injetam a variável em runtime
+
+---
+
+## Fonte de Dados NASA FIRMS
+
+- **API com Map Key:** `https://firms.modaps.eosdis.nasa.gov/api/country/csv/{MAP_KEY}/VIIRS_SNPP_NRT/BRA/1`
+- **Fallback público (sem key):** `https://firms.modaps.eosdis.nasa.gov/data/active_fire/noaa-20-viirs-c2/csv/J1_VIIRS_C2_South_America_{periodo}.csv`
+- Formato: CSV com colunas `latitude`, `longitude`, `acq_date`, `acq_time`, `satellite`, `instrument`, `confidence`, `frp`
+- `acq_time` formato `"HHMM"` (ex: `"1430"` = 14:30)
+
+---
+
+## Fluxo de Processamento (Ordem de Execução)
+
+```
+NasaIngestionService.processarCsv()
+  └─► [Filtro Qualidade] → confidence >= 50 / != "low"
+  └─► [Filtro Espacial] → BBox Brasil → Polígono preciso
+  └─► [Deduplicação] → existsByExternalId()
+  └─► ClusterizacaoService.processarFoco()
+        └─► ST_DWithin query → EventoFogo existente ou novo
+        └─► eventoFogo.adicionarFoco(foco) → acumula métricas
+        └─► eventoFogoRepository.save()
+  └─► GravidadeScoreService.avaliarGravidade()
+        └─► Se severo: salva ATIVO_SEVERO + publica RabbitMQ
+  └─► rabbitTemplate.convertAndSend("fortivus.exchange", "fire_event.updated", id)
+```
+
+---
+
+## Endpoints REST
+
+| Método | Path | Descrição |
+|---|---|---|
+| GET | `/api/v1/fire-events` | Listagem paginada (sort: dataUltimaDeteccao DESC) |
+| GET | `/api/v1/fire-events/buscar?q=` | Busca por ID parcial |
+| GET | `/api/v1/fire-events/latest` | 50 focos mais recentes |
+| GET | `/api/v1/fire-events/active` | Eventos não-extintos com seus focos |
+
+---
+
+## Débitos Técnicos Conhecidos
+
+1. `ReavaliacaoEventoService` usa `findAll()` — deve migrar para query com filtro por data/status
+2. DTOs (`EventoFogoDTO`, `FocoCalorDTO`) definidos como inner classes no Controller — mover para pacote `dto/`
+3. `application.yml` tinha API key hardcoded — corrigido para `${NASA_FIRMS_MAP_KEY}`
+4. `RestTemplate` no `NasaIngestionService` — candidato a migrar para `WebClient` (já configurado em `WebClientConfig`)
+
+---
+
+## Git — Fluxo Obrigatório
+
+```
+git checkout -b <tipo>/<tarefa>
+git add <arquivos-específicos>
+git commit -m "<tipo>(<escopo>): <descrição>"
+git push origin HEAD
+git checkout main && git pull origin main
+git merge <tipo>/<tarefa> --no-ff -m "Merge: <tipo>/<tarefa>"
+git push origin main
+git branch -d <tipo>/<tarefa>
+```
+
+**PROIBIDO:** `Co-authored-by: Claude` ou qualquer menção a IA nas mensagens de commit.
