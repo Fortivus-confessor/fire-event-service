@@ -60,3 +60,4 @@ spring:
         backend: fortivus
       reactive:
         enabled: false
+
