@@ -40,12 +40,7 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
-		    <!-- Vault Dynamic Secrets -->
-        <dependency>
-            <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-vault-database</artifactId>
-        </dependency>
-    </dependencies>
+		</dependencies>
 	</dependencyManagement>
 
 	<dependencies>
@@ -98,12 +93,7 @@
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
 		</dependency>
-	    <!-- Vault Dynamic Secrets -->
-        <dependency>
-            <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-vault-database</artifactId>
-        </dependency>
-    </dependencies>
+	</dependencies>
 
 	<build>
 		<plugins>
